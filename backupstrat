@@ -1,0 +1,135 @@
+#!/usr/bin/env python3
+####CHANGE THIS WHEN CHANGING THE FILE
+Version = '1.2'
+
+#get list of backup directories in directory
+#dir name format: YYYY-MM-DD-timestamp
+#Put dir names in dictionary, timestamp is the key.  Put the keys into a list
+#sort the timestamp list
+#Foreach key from oldest to newest
+#  if lastsaved = null:
+#    lastsaved = thisone
+#    next
+#  if month, day, year same as lastsaved:
+#    push lastsaved on delete queue
+#    lastsaved = thisone    # keep the newest on each day
+#    next
+#  if year is different from lastsaved:
+#    lastsaved = thisone
+#    next
+#  if month is different from lastsaved:
+#    lastsaved = thisone
+#    next
+#  if less than 4 weeks from today and is saturday
+#    lastsaved = thisone
+#    next
+#  if less than 1 week from today
+#    lastsaved = thisone
+#    next
+#  push on delete queue
+
+#print those to save and those to delete
+#give option to delete those on delete queue
+
+import datetime, time
+import sys,os,subprocess
+import shutil
+
+saved = [] #yyyy, mm, dd, ts
+dellist = []
+current = datetime.datetime.now()
+
+def usage():
+   print("usage: backupstrat source dest_directory")
+   print("where directory holds all the backup directories by date")
+   print("look in comments for name format")
+   exit(1)
+
+def processdir(newd):
+   global saved, dellist, current
+   
+   y,m,d,ts = newd.split('-')
+   if len(saved) == 0:
+      saved = y,m,d,ts
+      return
+   if (saved[0] == y) and (saved[1] == m) and (saved[2] == d):
+      dellist.append(saved[3])
+      saved = y,m,d,ts
+      return
+   if saved[0] != y:
+      saved = y,m,d,ts
+      return
+   if saved[1] != m:
+      saved = y,m,d,ts
+      return
+   d = datetime.datetime.fromtimestamp(int(ts))
+   diff = current - d
+   if (d == 5) and diff.days < 30:
+      saved = y,m,d,ts
+      return
+   if diff.days < 8:
+      saved = y,m,d,ts
+      return
+   dellist.append(ts)
+
+
+tslist = []
+bdir = {}
+def main():
+   global tslist, bdir, dellist
+   firstone = 0
+   if len(sys.argv) != 3:
+      usage()
+   source = sys.argv[1]
+   basedir = sys.argv[2]
+
+   try:
+      e = next(os.walk(basedir))[1]
+   except StopIteration:
+      e= []
+   print(e)
+
+   for n in e:
+      try:
+         y,m,d,ts = n.split('-')
+      except:
+         print("wrong format" + n)
+      tslist.append(ts)
+      bdir[ts] = n
+   tslist.sort()
+   for n in tslist:
+      f = bdir[n]
+      processdir(f)
+   if len(dellist) > 1:
+      del dellist[-1:]  #don't remove the latest one
+      print("Identified the following to delete:")
+      print(dellist)
+      resp = input("Press y to delete: ")
+      if 'Y' in resp.upper():
+         for f in dellist:
+            deldir = os.path.join(basedir,bdir[f])
+            shutil.rmtree(deldir, ignore_errors=True)
+      else:
+         print("Nothing deleted")
+
+   newdname = str(current.year) + '-' + str(current.month).zfill(2) + '-' + \
+           str(current.day).zfill(2)+ '-'  + str(int(current.timestamp()))
+   fulldest = os.path.join(basedir, newdname)
+   os.mkdir(fulldest)
+
+   #run rsync from last directory into newest directory
+   try:
+      olddir = bdir[saved[3]]
+   except:
+      firstone = 1
+
+   if firstone == 1:
+      subprocess.run(['rsync','-a','-x','--delete', source, fulldest])
+   else:
+      linkdir = os.path.join(basedir,olddir)
+      linkdest = '--link-dest='+linkdir+'/'
+      subprocess.run(['rsync','-a','-x','--delete', linkdest, source, fulldest])
+
+   
+
+main()

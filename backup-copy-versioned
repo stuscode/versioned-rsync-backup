@@ -1,0 +1,83 @@
+#!/usr/bin/env python3
+####CHANGE THIS WHEN CHANGING THE FILE
+Version = '1.1'
+
+# get list of versioned directories (subdirs) in directory
+# dir name format: YYYY-MM-DD-timestamp
+# Put dir names in dictionary, timestamp is the key.  Put the keys into a list
+# sort the timestamp list
+# Foreach key from oldest to newest
+#   if first:
+#      rsync directory to dest, use same names
+#   else:
+#      use rsync to move the current key, with the prior key as linkdest
+
+
+import datetime, time
+import sys,os,subprocess
+
+saved = [] #yyyy, mm, dd, ts
+dellist = []
+current = datetime.datetime.now()
+
+def usage():
+   print("usage: backup-copy-versioned source dest_directory")
+   print("where directory holds all the backup directories by date")
+   print("look in comments for name format")
+   exit(1)
+
+tslist = []
+bdir = {}
+def main():
+   global tslist, bdir, dellist, saved
+   firstone = 0
+   if len(sys.argv) != 3:
+      usage()
+   source = sys.argv[1]
+   dest = sys.argv[2]
+
+   e= listwithremote(source)
+   print(e)    #print list of backed up directories
+
+   for n in e:
+      try:
+         y,m,d,ts = n.split('-')
+      except:
+         print("wrong format" + n)
+      tslist.append(ts)
+      bdir[ts] = n
+   tslist.sort()    #tslist is now all the lists in sorted order
+   count = 0
+   if len(tslist) >= 1:
+      for n in tslist:
+         f = bdir[n]
+         fulldest = os.path.join(dest, f)
+         fullsource = os.path.join(source,f)
+         fullsource = fullsource + '/'  #don't make new dir level
+         os.mkdir(fulldest)
+         if count == 0:  #straight rsync
+            print("rsync -a --delete ",fullsource,fulldest)
+            subprocess.run(['rsync','-a','--delete', fullsource, fulldest])
+         else:  #rsync with linkdir as prior directory
+            linkdir = os.path.join(dest,olddir)
+            linkdest = '--link-dest='+linkdir+'/'
+            print("rsync -a --delete ",linkdest, fullsource,fulldest)
+            subprocess.run(['rsync','-a','--delete', linkdest, fullsource,fulldest])
+         count = count + 1
+         olddir = f
+
+def listwithremote(path):
+   e=[]
+   t = path.split(':')
+   if len(t) == 1:
+      try:
+         e = next(os.walk(t[0]))[1]
+      except:
+         e = []
+   else:
+      l = subprocess.run(['ssh',t[0],'ls',t[1]], stdout=subprocess.PIPE, universal_newlines=True)
+      e = [i for i in l.stdout.splitlines()]
+   return e
+
+
+main()
